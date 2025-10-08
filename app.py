@@ -29,7 +29,7 @@ if st.button("Analyze Article"):
     else:
         with st.spinner("Analyzing..."):
             # Summarize
-            summary = summarizer(article, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
+            summary = summarizer(article, max_length=1200, min_length=30, do_sample=False)[0]['summary_text']
             # Detect
             result = detector(article)[0]
             label = result['label']
