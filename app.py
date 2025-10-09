@@ -8,53 +8,17 @@ from datetime import datetime
 st.set_page_config(page_title="Fake News Detector", page_icon="📰")
 
 @st.cache_resource
-def load_summarizer(model_name: str):
-    return pipeline("summarization", model=model_name)
+def load_models():
+    try:
+        summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+        detector = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-fake-news-detection")
+        return summarizer, detector
+    except Exception as e:
+        st.error("⚠️ Model loading failed. Please try again later.")
+        st.write(e)
+        return None, None
 
-
-@st.cache_resource
-def load_detector(detector_type: str, model_name: str):
-    if detector_type == "Zero-shot (BART MNLI)":
-        return pipeline("zero-shot-classification", model=model_name)
-    return pipeline("text-classification", model=model_name)
-
-# Sidebar: model selection
-with st.sidebar:
-    st.header("Models")
-    summarizer_choice = st.selectbox(
-        "Summarizer",
-        (
-            "sshleifer/distilbart-cnn-12-6",  # fast, small
-            "facebook/bart-large-cnn",        # higher quality, larger
-        ),
-        index=0,
-    )
-    detector_type = st.selectbox(
-        "Detector type",
-        (
-            "Fine-tuned classifier",         # original
-            "Zero-shot (BART MNLI)",         # stronger general model
-        ),
-        index=0,
-    )
-    if detector_type == "Fine-tuned classifier":
-        detector_choice = st.text_input(
-            "Classifier model",
-            value="mrm8488/bert-tiny-finetuned-fake-news-detection",
-        )
-    else:
-        detector_choice = st.text_input(
-            "Zero-shot model",
-            value="facebook/bart-large-mnli",
-        )
-
-try:
-    summarizer = load_summarizer(summarizer_choice)
-    detector = load_detector(detector_type, detector_choice)
-except Exception as e:
-    summarizer, detector = None, None
-    st.error("⚠️ Model loading failed. Please adjust selections or try again later.")
-    st.write(e)
+summarizer, detector = load_models()
 
 st.title("📰 Fake News Detector for Students")
 st.markdown("Analyze articles, assess credibility, and summarize them to prevent misinformation.")
@@ -75,47 +39,34 @@ if st.button("Analyze Article"):
             # Summarize
             summary = summarizer(article, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
 
-            # Detect: handle two detector types
+            # Detect with all scores to present more realistic accuracy
             prob_fake = None
             prob_real = None
             label = "UNKNOWN"
             score = 0.0
-
-            if detector_type == "Zero-shot (BART MNLI)":
-                z = detector(article, candidate_labels=["REAL", "FAKE"])
-                # z has keys: labels, scores; align them
-                label_scores = {lbl.upper(): float(scr) for lbl, scr in zip(z.get("labels", []), z.get("scores", []))}
-                prob_real = label_scores.get("REAL", 0.0)
-                prob_fake = label_scores.get("FAKE", 0.0)
-                if prob_fake >= prob_real:
-                    label, score = "FAKE", prob_fake
+            all_scores = detector(article, return_all_scores=True)
+            all_scores = all_scores[0] if isinstance(all_scores, list) else all_scores
+            for item in all_scores:
+                lbl = str(item.get("label", "")).upper()
+                scr = float(item.get("score", 0.0))
+                if "FAKE" in lbl:
+                    prob_fake = scr
+                if "REAL" in lbl or "TRUE" in lbl:
+                    prob_real = scr
+            if prob_fake is None or prob_real is None:
+                result = detector(article)[0]
+                top_label = result.get("label", "").upper()
+                top_score = float(result.get("score", 0.0))
+                if "FAKE" in top_label:
+                    prob_fake = top_score
+                    prob_real = 1.0 - top_score
                 else:
-                    label, score = "REAL", prob_real
+                    prob_real = top_score
+                    prob_fake = 1.0 - top_score
+            if prob_fake >= prob_real:
+                label, score = "FAKE", prob_fake
             else:
-                # Fine-tuned classifier; try to get both probabilities
-                all_scores = detector(article, return_all_scores=True)
-                all_scores = all_scores[0] if isinstance(all_scores, list) else all_scores
-                for item in all_scores:
-                    lbl = str(item.get("label", "")).upper()
-                    scr = float(item.get("score", 0.0))
-                    if "FAKE" in lbl:
-                        prob_fake = scr
-                    if "REAL" in lbl or "TRUE" in lbl:
-                        prob_real = scr
-                if prob_fake is None or prob_real is None:
-                    result = detector(article)[0]
-                    top_label = result.get("label", "").upper()
-                    top_score = float(result.get("score", 0.0))
-                    if "FAKE" in top_label:
-                        prob_fake = top_score
-                        prob_real = 1.0 - top_score
-                    else:
-                        prob_real = top_score
-                        prob_fake = 1.0 - top_score
-                if prob_fake >= prob_real:
-                    label, score = "FAKE", prob_fake
-                else:
-                    label, score = "REAL", prob_real
+                label, score = "REAL", prob_real
 
         st.subheader("🧾 Summary:")
         st.write(summary)
