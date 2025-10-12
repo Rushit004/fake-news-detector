@@ -10,8 +10,10 @@ st.set_page_config(page_title="Fake News Detector", page_icon="📰")
 @st.cache_resource
 def load_models():
     try:
-        summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-        detector = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-fake-news-detection")
+        # More accurate summarization model
+        summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+        # More accurate fake news detection model
+        detector = pipeline("text-classification", model="mrm8488/distilbert-finetuned-fake-news-detection")
         return summarizer, detector
     except Exception as e:
         st.error("⚠️ Model loading failed. Please try again later.")
