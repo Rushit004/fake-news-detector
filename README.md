@@ -201,4 +201,3 @@ If you encounter issues:
 
 ---
 
-**Made with ❤️ for students and educators to combat misinformation**
